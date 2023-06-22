@@ -1,13 +1,15 @@
-# Washing-Machine-Sonoff-Pow-R2-Esphome
+# Washing-Machine-Sonoff-POW-Origin-Esphome
 
-I use a Sonoff Pow R2 to monitor my washing machine activity in Home assistant; traditional approach to do so is to decode washing phases using Home assistant sensors/templates. Thanks to ESPHome firmware this can be easily made directly in the Sonoff Pow R2 cleaning up Home assistant configuration.
+This is a Fork for https://github.com/Gio-dot work 
+
+I use a Sonoff POW Origin to monitor my washing machine activity in Home assistant; traditional approach to do so is to decode washing phases using Home assistant sensors/templates. Thanks to ESPHome firmware this can be easily made directly in the Sonoff Pow R2 cleaning up Home assistant configuration.
 Five binary sensors (RUN, WASHING, CENTRIFUGE, DRAIN, END) are automatically exposed by the Sonoff Pow to Home assistant frontend.
 
 RUN or END sensors can be easily used in Home assistant automations to send messages to Telegram or Google home etc. to  warn that the cycle has ended. See Home assistant example: [home_assistant_w_machine.yaml](https://github.com/Gio-dot/Washing-Machine-Sonoff-Pow-R2-Esphome/blob/master/home_assistant_w_machine.yaml)
 
 For instructions about ESPHome installation see: https://esphome.io/index.html
 
-### New Esphome and Home assistant code 10/06/2020
+### New Esphome and Home assistant code 22/06/2023
 Changelog:
 1. Optimized washing phases detection.
 2. Removed "washing" phase.
