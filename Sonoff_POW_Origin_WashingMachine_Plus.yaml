@@ -1,0 +1,377 @@
+# Basic Config
+substitutions:
+  friendly_name: POW Origin 16A
+  device_name: pow-origin-16a
+  
+  slow_update_interval: 10s #this was 90s
+  
+  machine_running_delayed_on: 30s  # MINIMUM TIME TO AVOID FALSE POSITIVES, this was 60s
+  machine_running_delayed_off: 5min #Was 300s=5min
+  
+  minimum_working_time_delayed_on: 10min #this was 30min
+  minimum_working_time_delayed_off: 3min #Was 180s=3min
+  
+  cycle_centrifughe_delayed_on: 30s   #this was 60s
+  
+  cycle_drain_delayed_on: 30s   #this was 60s
+  
+
+esphome:
+  name: $device_name
+
+esp32:
+  board: nodemcu-32s
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: $device_name
+    password: !secret wifi_failover
+
+captive_portal:
+
+logger:
+  level: INFO
+  baud_rate: 0
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: "XXXXXXX"
+
+ota:
+  password: !secret ota_pwd
+
+#optional
+web_server:
+  port: 80
+
+#optional
+#esp32_ble_tracker:
+#  scan_parameters:
+#    interval: 1100ms
+#    window: 1100ms
+#    active: true
+
+#optional
+bluetooth_proxy:
+  active: true
+
+uart:
+  - rx_pin: GPIO3
+    baud_rate: 4800
+    id: dummy_uart  # Will end up being assigned UART0
+  - rx_pin: GPIO16
+    baud_rate: 4800
+    id: active_uart  # Will end up being assigned UART1 to be used for the cse7766 communication
+
+time:
+  - platform: homeassistant
+    id: homeassistant_time
+##################################################################################
+##################################################################################
+##################################################################################
+##################################################################################
+globals:
+  - id: run_start_epoch
+    type: int
+    restore_value: no
+    initial_value: '-1' 
+##################################################################################
+##################################################################################
+##################################################################################
+##################################################################################
+binary_sensor:
+  - platform: gpio
+    pin:
+      number: GPIO0
+      mode:
+        input: true
+        pullup: true
+      inverted: true
+    name: "Sonoff Button"
+    on_press:
+      - switch.toggle: relay_1
+
+
+################################################################################
+#                               Machine running                                #
+################################################################################
+  - platform: template
+    name: "RUN"
+    id: machine_running
+    filters:
+      - delayed_on: $machine_running_delayed_on # MINIMUM TIME TO AVOID FALSE POSITIVES, this was 60s
+      - delayed_off: $machine_running_delayed_off
+    lambda: |-
+      if (isnan(id(power).state)) {
+        return {};
+      } else if (id(power).state > 1) {
+        // Running        
+        return true;
+      } else {
+        // Not running
+        return false;
+      }
+    on_press:
+      then: # at cycle start i reset all binary sensors
+        - lambda: |-  
+            {
+              id(machine_end).publish_state(false);
+              id(minimum_working_time).publish_state(false);
+              id(cycle_centrifughe).publish_state(false);
+              id(cycle_drain).publish_state(false);
+              
+              //Current run handling
+              if((id(homeassistant_time).now().is_valid()) && (id(run_start_epoch) < 0)){
+                auto current_time = id(homeassistant_time).now();
+                id(run_start_epoch) = current_time.timestamp;
+              }
+              else {
+                id(run_start_epoch)= -2;
+              }
+            }
+        - light.turn_on: led
+    on_release:
+      then: # at the end of cycle turn on end cycle
+        - lambda: |-  
+            {
+              id(machine_end).publish_state(true);
+              //Current run handling
+              if(id(run_start_epoch) > 0 ){
+                id(run_start_epoch) = -3;
+                std::string lastRunDetails = "Run Finshed at> ";
+                lastRunDetails += std::to_string(id(homeassistant_time).now().hour);
+                lastRunDetails += ":" + std::to_string(id(homeassistant_time).now().minute);
+                lastRunDetails += ", " + std::to_string(id(homeassistant_time).now().day_of_month);
+                lastRunDetails += "/" + std::to_string(id(homeassistant_time).now().month);
+                lastRunDetails += "/" + std::to_string(id(homeassistant_time).now().year);
+                lastRunDetails += ", Duration>" + id(run_elapsed_time).state;
+                id(last_run_details).publish_state(lastRunDetails);
+              }
+            }        
+################################################################################
+#                           Minimum duration cycle                             #
+################################################################################
+  - platform: template
+    name: "Washing Machine Minimum time"
+    internal: false # minimum working time 30m
+    id: minimum_working_time 
+    filters:
+      - delayed_on: $minimum_working_time_delayed_on
+      - delayed_off: $minimum_working_time_delayed_off
+    lambda: |-
+      if (isnan(id(power).state)) {
+        return {};
+      } else if (id(power).state > 4) {
+        // Running
+        return true;
+      } else {
+        // Not running (the two braces mean it does nothing)
+        return {};
+      }
+
+################################################################################
+#                                Centrifuge                                    #
+################################################################################
+  - platform: template
+    name: "CENTRIFUGE"
+    id: cycle_centrifughe
+    filters:
+      - delayed_on: $cycle_centrifughe_delayed_on
+    # >< 90W-400W for 60s (centrifuge)  010520 changed threshold to 100W
+    lambda: |-  
+      if (isnan(id(power).state)) {
+        return {};
+      } else if ( (id(power).state > 100)&&(id(power).state < 400)&&(id(minimum_working_time).state) ){
+        // Running
+        return true;
+      } else {
+        // Not running (the two braces mean it does nothing)
+        return {};
+      }
+################################################################################
+#                                Water drain                                   #
+################################################################################
+  - platform: template
+    name: "DRAIN"
+    id: cycle_drain
+    filters:
+      - delayed_on: $cycle_drain_delayed_on
+    # >< 15W-50W for 60s (drain pump)  
+    lambda: |-  
+      if (isnan(id(power).state)) {
+        return {};
+      } else if ( (id(power).state > 15) && (id(power).state < 60) && (id(cycle_centrifughe).state) ){
+        // Running
+        return true;
+      } else {
+        // Not running (the two braces mean it does nothing)
+        return {};
+      }                             
+################################################################################
+#                                 Machine end                                  #
+################################################################################
+  - platform: template
+    name: "END"
+    id: machine_end
+    on_press:
+      - light.turn_off: led     
+      
+################################################################################
+
+switch:
+  - platform: gpio
+    id: relay_1
+    pin: GPIO13
+    name: "Sonoff POW Relay"
+    restore_mode: ALWAYS_ON
+##############################################
+output:
+  - platform: ledc
+    id: pow_blue_led
+    pin:
+      number: GPIO18
+      inverted: True
+##############################################
+light:
+  - platform: monochromatic
+    name: "Sonoff POW Blue LED"
+    internal: true
+    output: pow_blue_led
+    id: led
+  - platform: status_led
+    id: wifi_status_led
+    internal: True
+    pin:
+      number: GPIO05
+      inverted: True
+##############################################
+sensor:
+  - platform: wifi_signal
+    name: "Sonoff POW WiFi Signal"
+    update_interval: 60s
+  - platform: uptime
+    name: "Sonoff POW Uptime"
+  - platform: cse7766
+    uart_id: active_uart # Select power meter's UART1
+    update_interval: 2s
+    current:
+      name: "Sonoff POW Current"
+      id: curr
+      internal: true
+    voltage:
+      name: "Sonoff POW Voltage"
+      id: volt
+      internal: true
+    power:
+      name: "Sonoff POW Power"
+      id: power
+      internal: true
+      on_value_range:
+         - above: 4.0
+           then:
+             - light.turn_on: led
+         - below: 3.0
+           then:
+             - delay: 60s
+             - light.turn_off: led
+  - platform: total_daily_energy ############################
+    name: "Sonoff POW Total Daily Energy"
+    power_id: power
+    filters:
+        # Multiplication factor from W to kW is 0.001
+      - multiply: 0.001
+    unit_of_measurement: kWh
+    accuracy_decimals: 1      
+
+################################################################################
+#                         Slow sensors for Home assistant                      #
+################################################################################
+
+  - platform: template #########################
+    name: "Sonoff Pow Current Slow"
+    lambda: |-
+      if (id(curr).state) {
+        return (id(curr).state);
+      } else {
+        return 0;
+      }
+    unit_of_measurement: A
+    icon: "mdi:alpha-a-circle"
+    update_interval: $slow_update_interval
+  
+  - platform: template #########################
+    name: "Sonoff Pow Voltage Slow"
+    lambda: |-
+      if (id(volt).state) {
+        return (id(volt).state);
+      } else {
+        return 0;
+      }
+    unit_of_measurement: V
+    icon: "mdi:alpha-v-circle"
+    update_interval: $slow_update_interval #this was 90s
+  
+  - platform: template #########################
+    name: "Sonoff Pow Power Slow"
+    lambda: |-
+      if (id(power).state) {
+        return (id(power).state);
+      } else {
+        return 0;
+      }
+    unit_of_measurement: W 
+    icon: "mdi:alpha-w-circle"
+    update_interval: $slow_update_interval #this was 90s
+  
+text_sensor:
+  - platform: version
+    name: "Sonoff POW ESPHome Version"
+##################################################################################
+##################################################################################
+##################################################################################
+##################################################################################
+
+################################################################################
+#                               Run Elapsed Time                               #
+################################################################################
+  - platform: template
+    name: "Current Run Elapsed Time"
+    id: run_elapsed_time
+    update_interval: 1s
+#    filters:
+#      - delayed_on: 60s # MINIMUM TIME TO AVOID FALSE POSITIVES, this was 60s
+#      - delayed_off: 300s
+    lambda: |-
+      if ((id(homeassistant_time).now().is_valid()) && (id(run_start_epoch) > 0) && (id(machine_running).state)){
+        auto current_time = id(homeassistant_time).now();
+        auto time = (current_time.timestamp) - ( id(run_start_epoch)) ;
+        auto seconds = to_string((int)(time % 60));
+        time /= 60;
+        auto minutes = to_string((int)(time % 60));
+        time /= 60;
+        auto hours = to_string((int)(time % 60));
+        return hours + "H:" + minutes + "M:"+seconds+"S";
+      } else {
+        return {"??H:??M:??S"};
+      }
+################################################################################
+#                               Last Run Details                               #
+################################################################################
+  - platform: template
+    name: "Last Run Details"
+    id: last_run_details
+    update_interval: 1s
+
+interval:
+  - interval: 30s
+    then:
+      if:
+        condition:
+          wifi.connected:
+        then:
+          - light.turn_on: wifi_status_led
+        else:
+          - light.turn_off: wifi_status_led
