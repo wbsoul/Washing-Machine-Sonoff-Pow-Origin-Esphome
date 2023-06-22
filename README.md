@@ -19,7 +19,7 @@ Use this yaml code to create your ESPHome firmware [Sonoff_POW_Origin_WashingMac
 
 ## How it works
 
-<img src="https://github.com/wbsoul/Washing-Machine-Sonoff-Pow-Origin-Esphome/raw/master/img/end.jpg">
+<img src="https://github.com/wbsoul/Washing-Machine-Sonoff-Pow-Origin-Esphome/raw/master/img/end.jpg" width="300">
 This image show Home assitant card from Sonoff Pow. Washing phases are shown in sequence from bottom to top. At the end of the cycle all phases (except RUN) remains lighted. At next cycle start they are resetted.
 Sonoff Pow blue Led is lighted when a cycle is running and turned off at the cycle end.
 
