@@ -15,7 +15,7 @@ Changelog:
 2. Added a text sensor to store the last run detail [Finish Time/Date and Elapsed Time]. This is poulated after each run is completed.
 3. Added most timing parameters into the substitutions: part to easly customize without going through the code.
 
-Use this yaml code to create your ESPHome firmware [sonoff_pow_r2_w_machine.yaml](https://github.com/Gio-dot/Washing-Machine-Sonoff-Pow-R2-Esphome/blob/master/sonoff_pow_r2_w_machine.yaml)
+Use this yaml code to create your ESPHome firmware [sonoff_pow_r2_w_machine.yaml](https://github.com/wbsoul/Washing-Machine-Sonoff-Pow-Origin-Esphome/edit/master/Sonoff_POW_Origin_WashingMachine_Plus.yaml)
 
 ## How it works
 
