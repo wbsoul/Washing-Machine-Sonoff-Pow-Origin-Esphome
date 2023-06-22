@@ -1,19 +1,20 @@
 # Basic Config
 substitutions:
-  friendly_name: POW Origin 16A
+  friendly_name: Washing Machine
   device_name: pow-origin-16a
-  
   slow_update_interval: 10s #this was 90s
-  
-  machine_running_delayed_on: 30s  # MINIMUM TIME TO AVOID FALSE POSITIVES, this was 60s
-  machine_running_delayed_off: 5min #Was 300s=5min
-  
-  minimum_working_time_delayed_on: 10min #this was 30min
-  minimum_working_time_delayed_off: 3min #Was 180s=3min
-  
-  cycle_centrifughe_delayed_on: 30s   #this was 60s
-  
-  cycle_drain_delayed_on: 30s   #this was 60s
+  machine_running_delayed_on: 10s  # MINIMUM TIME TO AVOID FALSE POSITIVES, this was 60s
+  machine_running_delayed_off: 1min #Was 300s=5min
+  minimum_working_time_delayed_on: 8min #this was 30min
+  minimum_working_time_delayed_off: 2min #Was 180s=3min
+  cycle_centrifughe_delayed_on: 2s   #this was 60s
+  cycle_drain_delayed_on: 2s   #this was 60s
+  run_elapsed_time_update_interval: 60s
+  power_thershold_running: '5' 
+  power_thershold_centrifuge_low: '100'
+  power_thershold_centrifuge_high: '400'
+  power_thershold_drain_low: '15'
+  power_thershold_drain_high: '50'
   
 
 esphome:
@@ -38,7 +39,7 @@ logger:
 # Enable Home Assistant API
 api:
   encryption:
-    key: "XXXXXXX"
+    key: "xxxxxxxxxxxxxxx"
 
 ota:
   password: !secret ota_pwd
@@ -55,8 +56,8 @@ web_server:
 #    active: true
 
 #optional
-bluetooth_proxy:
-  active: true
+#bluetooth_proxy:
+#  active: true
 
 uart:
   - rx_pin: GPIO3
@@ -90,7 +91,7 @@ binary_sensor:
         input: true
         pullup: true
       inverted: true
-    name: "Sonoff Button"
+    name: $friendly_name Button
     on_press:
       - switch.toggle: relay_1
 
@@ -99,7 +100,11 @@ binary_sensor:
 #                               Machine running                                #
 ################################################################################
   - platform: template
-    name: "RUN"
+    name: RUN
+    id: running
+    internal: true
+  - platform: template
+    name: $friendly_name RUN
     id: machine_running
     filters:
       - delayed_on: $machine_running_delayed_on # MINIMUM TIME TO AVOID FALSE POSITIVES, this was 60s
@@ -107,8 +112,14 @@ binary_sensor:
     lambda: |-
       if (isnan(id(power).state)) {
         return {};
-      } else if (id(power).state > 1) {
-        // Running        
+      } else if ((id(power).state > $power_thershold_running) && !( id(running).state ) ) {
+        id(running).publish_state(true);
+        // Running 1st time, let's log        
+        ESP_LOGI("WM.Running","lambda, RUN Cycle Detected");
+        return true;
+      }
+      else if ((id(power).state > $power_thershold_running) ) {
+        // Running again
         return true;
       } else {
         // Not running
@@ -118,6 +129,7 @@ binary_sensor:
       then: # at cycle start i reset all binary sensors
         - lambda: |-  
             {
+              ESP_LOGI("WM.Running","ON Press, Resetting all other cycles to Off...");
               id(machine_end).publish_state(false);
               id(minimum_working_time).publish_state(false);
               id(cycle_centrifughe).publish_state(false);
@@ -125,10 +137,12 @@ binary_sensor:
               
               //Current run handling
               if((id(homeassistant_time).now().is_valid()) && (id(run_start_epoch) < 0)){
+                ESP_LOGI("WM.Running","ON Press, Storing Current Time in epoch...");
                 auto current_time = id(homeassistant_time).now();
                 id(run_start_epoch) = current_time.timestamp;
               }
               else {
+                ESP_LOGI("WM.Running","ON Press, setting epoch to -2...");
                 id(run_start_epoch)= -2;
               }
             }
@@ -137,25 +151,28 @@ binary_sensor:
       then: # at the end of cycle turn on end cycle
         - lambda: |-  
             {
+              ESP_LOGI("WM.Running","ON Relese, lambda, setting END Cycle to ON...");
               id(machine_end).publish_state(true);
               //Current run handling
               if(id(run_start_epoch) > 0 ){
+                ESP_LOGI("WM.Running","ON Relese, lambda, Storing last run details...");
                 id(run_start_epoch) = -3;
-                std::string lastRunDetails = "Run Finshed at> ";
-                lastRunDetails += std::to_string(id(homeassistant_time).now().hour);
-                lastRunDetails += ":" + std::to_string(id(homeassistant_time).now().minute);
-                lastRunDetails += ", " + std::to_string(id(homeassistant_time).now().day_of_month);
-                lastRunDetails += "/" + std::to_string(id(homeassistant_time).now().month);
-                lastRunDetails += "/" + std::to_string(id(homeassistant_time).now().year);
-                lastRunDetails += ", Duration>" + id(run_elapsed_time).state;
+                std::string lastRunDetails = "Run Finshed ";
+                lastRunDetails +=        to_string(id(homeassistant_time).now().hour);
+                lastRunDetails += ":" +  to_string(id(homeassistant_time).now().minute);
+                lastRunDetails += ", " + to_string(id(homeassistant_time).now().day_of_month);
+                lastRunDetails += "/" +  to_string(id(homeassistant_time).now().month);
+                lastRunDetails += "/" +  to_string(id(homeassistant_time).now().year);
+                lastRunDetails += ", Duration>" + id(run_elapsed_time).state;                
                 id(last_run_details).publish_state(lastRunDetails);
+                ESP_LOGI("WM.Running","ON Relese, lambda, lastRunDetails published...");
               }
             }        
 ################################################################################
 #                           Minimum duration cycle                             #
 ################################################################################
   - platform: template
-    name: "Washing Machine Minimum time"
+    name: $friendly_name Minimum time
     internal: false # minimum working time 30m
     id: minimum_working_time 
     filters:
@@ -164,7 +181,7 @@ binary_sensor:
     lambda: |-
       if (isnan(id(power).state)) {
         return {};
-      } else if (id(power).state > 4) {
+      } else if (id(power).state > $power_thershold_running) {
         // Running
         return true;
       } else {
@@ -176,16 +193,25 @@ binary_sensor:
 #                                Centrifuge                                    #
 ################################################################################
   - platform: template
-    name: "CENTRIFUGE"
+    name: CENTRIFUGE
+    id: centrifughe
+    internal: true
+  - platform: template
+    name: $friendly_name CENTRIFUGE
     id: cycle_centrifughe
     filters:
       - delayed_on: $cycle_centrifughe_delayed_on
-    # >< 90W-400W for 60s (centrifuge)  010520 changed threshold to 100W
     lambda: |-  
       if (isnan(id(power).state)) {
+        ESP_LOGI("WM.Centrifuge","isnan");
         return {};
-      } else if ( (id(power).state > 100)&&(id(power).state < 400)&&(id(minimum_working_time).state) ){
-        // Running
+      } else if ( (id(power).state > $power_thershold_centrifuge_low)&&(id(power).state < $power_thershold_centrifuge_high)&&(id(minimum_working_time).state) && !(id(centrifughe).state) ){
+        id(centrifughe).publish_state(true);
+        //centrifughe for fisrt time, let's log it
+        ESP_LOGI("WM.Centrifuge","Centrifuge Cycle Detected");
+        return true;
+      } else if ( (id(power).state > $power_thershold_centrifuge_low)&&(id(power).state < $power_thershold_centrifuge_high)&&(id(minimum_working_time).state)  ){
+        //centrifughe 
         return true;
       } else {
         // Not running (the two braces mean it does nothing)
@@ -195,16 +221,25 @@ binary_sensor:
 #                                Water drain                                   #
 ################################################################################
   - platform: template
-    name: "DRAIN"
+    name: DRAIN
+    id: drain
+    internal: true
+  - platform: template
+    name: $friendly_name DRAIN
     id: cycle_drain
     filters:
       - delayed_on: $cycle_drain_delayed_on
-    # >< 15W-50W for 60s (drain pump)  
     lambda: |-  
       if (isnan(id(power).state)) {
+        ESP_LOGI("WM.Drain","Drain isnan");
         return {};
-      } else if ( (id(power).state > 15) && (id(power).state < 60) && (id(cycle_centrifughe).state) ){
-        // Running
+      } else if ( (id(power).state > $power_thershold_drain_low) && (id(power).state < $power_thershold_drain_high) && (id(cycle_centrifughe).state) && ( !(id(drain).state) ) ){
+        id(drain).publish_state(true);
+        //Draining for fisrt time, let's log it
+        ESP_LOGI("WM.Drain","Drain Detected");
+        return true;
+      } else if ( (id(power).state > $power_thershold_drain_low) && (id(power).state < $power_thershold_drain_high) && (id(cycle_centrifughe).state) ){
+        //Draining
         return true;
       } else {
         // Not running (the two braces mean it does nothing)
@@ -214,7 +249,7 @@ binary_sensor:
 #                                 Machine end                                  #
 ################################################################################
   - platform: template
-    name: "END"
+    name: $friendly_name END
     id: machine_end
     on_press:
       - light.turn_off: led     
@@ -225,7 +260,7 @@ switch:
   - platform: gpio
     id: relay_1
     pin: GPIO13
-    name: "Sonoff POW Relay"
+    name: $friendly_name Relay
     restore_mode: ALWAYS_ON
 ##############################################
 output:
@@ -237,7 +272,7 @@ output:
 ##############################################
 light:
   - platform: monochromatic
-    name: "Sonoff POW Blue LED"
+    name: $friendly_name Blue LED
     internal: true
     output: pow_blue_led
     id: led
@@ -250,23 +285,23 @@ light:
 ##############################################
 sensor:
   - platform: wifi_signal
-    name: "Sonoff POW WiFi Signal"
+    name: $friendly_name WiFi Signal
     update_interval: 60s
   - platform: uptime
-    name: "Sonoff POW Uptime"
+    name: $friendly_name Uptime
   - platform: cse7766
     uart_id: active_uart # Select power meter's UART1
     update_interval: 2s
     current:
-      name: "Sonoff POW Current"
+      name: $friendly_name Current
       id: curr
       internal: true
     voltage:
-      name: "Sonoff POW Voltage"
+      name: $friendly_name Voltage
       id: volt
       internal: true
     power:
-      name: "Sonoff POW Power"
+      name: $friendly_name Power
       id: power
       internal: true
       on_value_range:
@@ -278,7 +313,7 @@ sensor:
              - delay: 60s
              - light.turn_off: led
   - platform: total_daily_energy ############################
-    name: "Sonoff POW Total Daily Energy"
+    name: $friendly_name Total Daily Energy
     power_id: power
     filters:
         # Multiplication factor from W to kW is 0.001
@@ -291,7 +326,8 @@ sensor:
 ################################################################################
 
   - platform: template #########################
-    name: "Sonoff Pow Current Slow"
+    name: $friendly_name Current Slow
+    accuracy_decimals: 3
     lambda: |-
       if (id(curr).state) {
         return (id(curr).state);
@@ -303,7 +339,7 @@ sensor:
     update_interval: $slow_update_interval
   
   - platform: template #########################
-    name: "Sonoff Pow Voltage Slow"
+    name: $friendly_name Voltage Slow
     lambda: |-
       if (id(volt).state) {
         return (id(volt).state);
@@ -315,7 +351,7 @@ sensor:
     update_interval: $slow_update_interval #this was 90s
   
   - platform: template #########################
-    name: "Sonoff Pow Power Slow"
+    name: $friendly_name Power Slow
     lambda: |-
       if (id(power).state) {
         return (id(power).state);
@@ -340,22 +376,21 @@ text_sensor:
   - platform: template
     name: "Current Run Elapsed Time"
     id: run_elapsed_time
-    update_interval: 1s
-#    filters:
-#      - delayed_on: 60s # MINIMUM TIME TO AVOID FALSE POSITIVES, this was 60s
-#      - delayed_off: 300s
+    update_interval: $run_elapsed_time_update_interval
     lambda: |-
       if ((id(homeassistant_time).now().is_valid()) && (id(run_start_epoch) > 0) && (id(machine_running).state)){
         auto current_time = id(homeassistant_time).now();
         auto time = (current_time.timestamp) - ( id(run_start_epoch)) ;
-        auto seconds = to_string((int)(time % 60));
+        auto seconds = ((((int)(time % 60)) < 10)?"0":"") + to_string((int)(time % 60));
         time /= 60;
-        auto minutes = to_string((int)(time % 60));
+        auto minutes = ((((int)(time % 60)) < 10)?"0":"") + to_string((int)(time % 60));
         time /= 60;
-        auto hours = to_string((int)(time % 60));
-        return hours + "H:" + minutes + "M:"+seconds+"S";
+        auto hours   = ((((int)(time % 60)) < 10)?"0":"") + to_string((int)(time % 60));
+        //return hours + ":" + minutes + ":"+seconds;
+        return hours + ":" + minutes;
       } else {
-        return {"??H:??M:??S"};
+        //return {"00:00:00"};
+        return {"00:00"};
       }
 ################################################################################
 #                               Last Run Details                               #
@@ -363,7 +398,7 @@ text_sensor:
   - platform: template
     name: "Last Run Details"
     id: last_run_details
-    update_interval: 1s
+    update_interval: $run_elapsed_time_update_interval
 
 interval:
   - interval: 30s
