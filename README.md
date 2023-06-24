@@ -1,8 +1,10 @@
 # Washing-Machine-Sonoff-POW-Origin-Esphome
 
-This is a Fork for [Gio-dot](https://github.com/Gio-dot) work.
+This is a Fork from [Gio-dot](https://github.com/Gio-dot) work.
 
-I use a Sonoff POW Origin to monitor my washing machine activity in Home assistant; traditional approach to do so is to decode washing phases using Home assistant sensors/templates. Thanks to ESPHome firmware this can be easily made directly in the Sonoff Pow R2 cleaning up Home assistant configuration.
+I use a Sonoff POW Origin 16A to monitor my washing machine activity in Home assistant. Basic configuration are based on the template [Sonoff-POW-Elite-20a](https://devices.esphome.io/devices/Sonoff-POW-Elite-20a), after removing the display part which isn't exesting in Sonoff POW Origin 16A.
+
+Traditional approach to do so is to decode washing phases using Home assistant sensors/templates. Thanks to ESPHome firmware this can be easily made directly in the Sonoff Pow R2 cleaning up Home assistant configuration.
 Five binary sensors (RUN, WASHING, CENTRIFUGE, DRAIN, END) are automatically exposed by the Sonoff Pow to Home assistant frontend.
 
 RUN or END sensors can be easily used in Home assistant automations to send messages to Telegram or Google home etc. to  warn that the cycle has ended. See Home assistant example: [home_assistant_w_machine.yaml](https://github.com/Gio-dot/Washing-Machine-Sonoff-Pow-R2-Esphome/blob/master/home_assistant_w_machine.yaml)
