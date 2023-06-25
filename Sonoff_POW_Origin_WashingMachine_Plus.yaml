@@ -5,13 +5,13 @@ substitutions:
   slow_update_interval: 10s #this was 90s
   machine_running_delayed_on: 60s  # MINIMUM TIME TO AVOID FALSE POSITIVES, this was 60s
   machine_running_delayed_off: 1min #Was 300s=5min
-  minimum_working_time_delayed_on: 20min #this was 30min
+  minimum_working_time_delayed_on: 30min #this was 30min
   minimum_working_time_delayed_off: 2min #Was 180s=3min
   cycle_centrifughe_delayed_on: 60s   #this was 60s
   cycle_drain_delayed_on: 60s   #this was 60s
   run_elapsed_time_update_interval: 60s
   power_thershold_running: '5' 
-  power_thershold_centrifuge_low: '100'
+  power_thershold_centrifuge_low: '110'
   power_thershold_centrifuge_high: '400'
   power_thershold_drain_low: '15'
   power_thershold_drain_high: '50'
@@ -112,11 +112,11 @@ binary_sensor:
     lambda: |-
       if (isnan(id(power).state)) {
         return {};
-      } else if ((id(power).state > $power_thershold_running) && !( id(running).state ) ) {
-        id(running).publish_state(true);
+      //} else if ((id(power).state > $power_thershold_running) && !( id(running).state ) ) {
+      } else if ((id(power).state > $power_thershold_running)  ) {
         // Running 1st time, let's log        
-        ESP_LOGI("WM.Running","lambda, RUN Cycle Detected");
-        ESP_LOGI("WM.Running","power=%f",id(power_slow).state );
+        //ESP_LOGI("WM.Running","lambda, RUN Cycle Detected, power=%f",id(power).state );
+        id(running).publish_state(true);
         return true;
       }
       else if ((id(power).state > $power_thershold_running) ) {
@@ -130,24 +130,21 @@ binary_sensor:
       then: # at cycle start i reset all binary sensors
         - lambda: |-  
             {
-              ESP_LOGI("WM.Running","ON Press, Resetting all other cycles to Off...");
-              ESP_LOGI("WM.Running","power=%f",id(power_slow).state );
+              ESP_LOGI("WM.Running","ON Press, Resetting all other cycles to Off. power=%f",id(power).state );
               id(machine_end).publish_state(false);
               id(minimum_working_time).publish_state(false);
               id(cycle_centrifughe).publish_state(false);
               id(cycle_drain).publish_state(false);
-              
               //Current run handling
               if((id(homeassistant_time).now().is_valid()) && (id(run_start_epoch) < 0)){
-                ESP_LOGI("WM.Running","ON Press, Storing Current Time in epoch...");
-                ESP_LOGI("WM.Running","power=%f",id(power_slow).state );
-                
+                ESP_LOGI("WM.Running","ON Press, Storing Current Time in epoch. power=%f",id(power).state );
                 auto current_time = id(homeassistant_time).now();
                 id(run_start_epoch) = current_time.timestamp;
+                ESP_LOGI("WM.Running","ON Press, Storing current power_total_daily=%f",id(power_total_daily).state );
+                id(run_power_start).publish_state(id(power_total_daily).state);
               }
               else {
-                ESP_LOGI("WM.Running","ON Press, setting epoch to -2...");
-                ESP_LOGI("WM.Running","power=%f",id(power_slow).state );
+                ESP_LOGI("WM.Running","ON Press, setting epoch to -2. power=%f",id(power).state );
                 id(run_start_epoch)= -2;
               }
             }
@@ -156,24 +153,24 @@ binary_sensor:
       then: # at the end of cycle turn on end cycle
         - lambda: |-  
             {
-              ESP_LOGI("WM.Running","ON Relese, lambda, setting END Cycle to ON...");
-              ESP_LOGI("WM.Running","power=%f",id(power_slow).state );
+              ESP_LOGI("WM.Running","ON Relese, lambda, setting END Cycle to ON. power=%f",id(power).state );
               id(machine_end).publish_state(true);
               //Current run handling
               if(id(run_start_epoch) > 0 ){
-                ESP_LOGI("WM.Running","ON Relese, lambda, Storing last run details...");
-                ESP_LOGI("WM.Running","power=%f",id(power_slow).state );
+                ESP_LOGI("WM.Running","ON Relese, lambda, Storing last run details. power=%f",id(power).state );
                 id(run_start_epoch) = -3;
+                auto last_run_power = id(power_total_daily).state - id(run_power_start).state;
+                ESP_LOGI("WM.Running","ON Relese, lambda, last_run_power=%f",last_run_power );
                 std::string lastRunDetails = "Run Finshed ";
                 lastRunDetails +=        to_string(id(homeassistant_time).now().hour);
                 lastRunDetails += ":" +  to_string(id(homeassistant_time).now().minute);
                 lastRunDetails += ", " + to_string(id(homeassistant_time).now().day_of_month);
                 lastRunDetails += "/" +  to_string(id(homeassistant_time).now().month);
                 lastRunDetails += "/" +  to_string(id(homeassistant_time).now().year);
-                lastRunDetails += ", Duration " + id(run_elapsed_time).state;                
+                lastRunDetails += ", Duration " + id(run_elapsed_time).state;
+                lastRunDetails += ", Power Consumed " + to_string(last_run_power) + "kW;
                 id(last_run_details).publish_state(lastRunDetails);
-                ESP_LOGI("WM.Running","ON Relese, lambda, lastRunDetails published...");
-                ESP_LOGI("WM.Running","power=%f",id(power_slow).state );
+                ESP_LOGI("WM.Running","ON Relese, lambda, lastRunDetails published. power=%f",id(power).state );
               }
             }        
 ################################################################################
@@ -214,10 +211,9 @@ binary_sensor:
         ESP_LOGI("WM.Centrifuge","isnan");        
         return {};
       } else if ( (id(power).state > $power_thershold_centrifuge_low)&&(id(power).state < $power_thershold_centrifuge_high)&&(id(minimum_working_time).state) && !(id(centrifughe).state) ){
-        id(centrifughe).publish_state(true);
         //centrifughe for fisrt time, let's log it
-        ESP_LOGI("WM.Centrifuge","Centrifuge Cycle Detected");
-        ESP_LOGI("WM.Centrifuge","power=%f",id(power_slow).state );
+        ESP_LOGI("WM.Centrifuge","Centrifuge Cycle Detected, power=%f",id(power).state );
+        id(centrifughe).publish_state(true);
         return true;
       } else if ( (id(power).state > $power_thershold_centrifuge_low)&&(id(power).state < $power_thershold_centrifuge_high)&&(id(minimum_working_time).state)  ){
         //centrifughe 
@@ -242,11 +238,11 @@ binary_sensor:
       if (isnan(id(power).state)) {
         ESP_LOGI("WM.Drain","Drain isnan");
         return {};
-      } else if ( (id(power).state > $power_thershold_drain_low) && (id(power).state < $power_thershold_drain_high) && (id(cycle_centrifughe).state) && ( !(id(drain).state) ) ){
-        id(drain).publish_state(true);
+      //} else if ( (id(power).state > $power_thershold_drain_low) && (id(power).state < $power_thershold_drain_high) && (id(cycle_centrifughe).state) && ( !(id(drain).state) ) ){
+      } else if ( (id(power).state > $power_thershold_drain_low) && (id(power).state < $power_thershold_drain_high) && (id(cycle_centrifughe).state)  ){
         //Draining for fisrt time, let's log it
-        ESP_LOGI("WM.Drain","Drain Detected");
-        ESP_LOGI("WM.Drain","power=%f",id(power_slow).state );
+        //ESP_LOGI("WM.Drain","Drain Detected, power=%f",id(power).state );
+        id(drain).publish_state(true);
         return true;
       } else if ( (id(power).state > $power_thershold_drain_low) && (id(power).state < $power_thershold_drain_high) && (id(cycle_centrifughe).state) ){
         //Draining
@@ -254,7 +250,15 @@ binary_sensor:
       } else {
         // Not running (the two braces mean it does nothing)
         return {};
-      }                             
+      }
+    on_press:
+      then:
+        - lambda: |-
+            ESP_LOGI("WM.Drain","on_press, Drain Detected, power=%f",id(power).state );
+    on_release:
+      then:
+        - lambda: |-
+            ESP_LOGI("WM.Drain","on_release, Drain set to off, power=%f",id(power).state );
 ################################################################################
 #                                 Machine end                                  #
 ################################################################################
@@ -325,6 +329,7 @@ sensor:
   - platform: total_daily_energy ############################
     name: $friendly_name Total Daily Energy
     power_id: power
+    id: power_total_daily
     filters:
         # Multiplication factor from W to kW is 0.001
       - multiply: 0.001
@@ -374,6 +379,12 @@ sensor:
     unit_of_measurement: W 
     icon: "mdi:alpha-w-circle"
     update_interval: $slow_update_interval #this was 90s
+    
+  - platform: template #to hold the power reading when run starts
+    id: run_power_start
+    internal: true
+    unit_of_measurement: W 
+
   
 text_sensor:
   - platform: version
