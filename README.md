@@ -11,12 +11,13 @@ RUN or END sensors can be easily used in Home assistant automations to send mess
 
 For instructions about ESPHome installation see: https://esphome.io/index.html
 
-### New Esphome and Home assistant code 23/06/2023
+
 Changelog:
 1. Added a text sensor to show the elapsed time for the current run.
 2. Added a text sensor to store the last run details "Finish Time/Date and Elapsed Time". This is populated after each run end.
 3. Added most timing parameters into the substitutions part to easly customize without going through the whole code.
 4. Added some logging
+5. Added kW Power consumed in last run details
 
 Use this yaml code to create your ESPHome firmware [Sonoff_POW_Origin_WashingMachine_Plus.yaml](https://github.com/wbsoul/Washing-Machine-Sonoff-Pow-Origin-Esphome/edit/master/Sonoff_POW_Origin_WashingMachine_Plus.yaml)
 
