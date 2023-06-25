@@ -168,7 +168,7 @@ binary_sensor:
                 lastRunDetails += "/" +  to_string(id(homeassistant_time).now().month);
                 lastRunDetails += "/" +  to_string(id(homeassistant_time).now().year);
                 lastRunDetails += ", Duration " + id(run_elapsed_time).state;
-                lastRunDetails += ", Power Consumed " + to_string(last_run_power) + "kW;
+                lastRunDetails += ", Power Consumed " + to_string(last_run_power) + "kW";
                 id(last_run_details).publish_state(lastRunDetails);
                 ESP_LOGI("WM.Running","ON Relese, lambda, lastRunDetails published. power=%f",id(power).state );
               }
